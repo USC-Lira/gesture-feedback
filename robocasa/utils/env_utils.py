@@ -14,16 +14,6 @@ from termcolor import colored
 from scipy.spatial.transform import Rotation as R
 
 def scripted_policy(obs):
-    """
-    A scripted policy to move the robot's end-effector towards the target object using PD control 
-    without requiring angular or linear velocities.
-    
-    Parameters:
-    - obs: A dictionary containing the state information.
-
-    Returns:
-    - action: An array representing the action to move the robot's end-effector towards the object.
-    """
     # Extract relevant information from observations
     eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
     eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
@@ -42,7 +32,7 @@ def scripted_policy(obs):
     rot_diff_axis_angle = rot_diff.as_rotvec()
 
     # Set control gains (adjust these based on your system's tuning)
-    threshold = 0.05  # Distance threshold to stop moving towards the object
+    threshold = 0.1  # Distance threshold to stop moving towards the object
     Kp_pos = 1.0  # Position proportional gain
     Kp_rot = 0.5  # Rotation proportional gain
 
@@ -53,7 +43,7 @@ def scripted_policy(obs):
     if distance > threshold:
         action[:3] = Kp_pos * position_diff  # Proportional control for position
     else:
-        action[:3] = np.zeros(3)  # Stop moving if close enough
+        return action # Stop moving if close enough
 
     # Orientation control (P control)
     action[3:6] = Kp_rot * rot_diff_axis_angle  # Control for orientation
