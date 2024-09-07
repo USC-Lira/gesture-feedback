@@ -7,6 +7,8 @@ from zipfile import ZipFile
 from termcolor import colored
 from tqdm import tqdm
 
+import sys
+sys.path.append("./robocasa/")
 import robocasa
 
 DOWNLOAD_ASSET_REGISTRY = dict(

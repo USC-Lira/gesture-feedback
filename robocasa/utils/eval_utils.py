@@ -44,7 +44,7 @@ def create_eval_env(
         has_renderer=False,
         has_offscreen_renderer=True,
         ignore_done=True,
-        use_object_obs=True,
+        use_object_obs=False,
         use_camera_obs=True,
         camera_depths=False,
         seed=seed,
@@ -67,13 +67,19 @@ def run_random_rollouts(env, num_rollouts, num_steps, video_path=None):
     info = {}
     num_success_rollouts = 0
     for rollout_i in tqdm(range(num_rollouts)):
+        print("1111")
+        # print(obs)
         obs = env.reset()
+        print("22222")
+        # print(obs)
         for step_i in range(num_steps):
             # sample and execute random action
             action = np.random.uniform(low=env.action_spec[0], high=env.action_spec[1])
             obs, _, _, _ = env.step(action)
+            print(obs)
 
             if video_writer is not None:
+
                 video_img = env.sim.render(
                     height=512, width=512, camera_name="robot0_agentview_center"
                 )[::-1]

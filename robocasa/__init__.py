@@ -1,3 +1,5 @@
+import sys
+sys.path.append("./robosuite/")
 from robosuite.environments.base import make
 
 # Manipulation environments
