@@ -18,23 +18,33 @@ def scripted_policy(obs):
     eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
     eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
     
-    obj_pos = np.array(obs['drawer_obj_pos'])         # Object position (e.g., drawer)
-    obj_quat = np.array(obs['drawer_obj_quat'])       # Object orientation (quaternion)
+    obj_pos = np.array(obs['distr_counter_0_pos'])         # Object position (e.g., drawer)
+    obj_quat = np.array(obs['distr_counter_0_quat'])       # Object orientation (quaternion)
+
+    # Drawer: drawer_obj
+    # SinkFaucet: distr_counter_0
+    # Coffee: obj
+    # TurnOnStove: cookware
+    # Door: door_obj
+    # CoffeeServeMug: obj
+    # Microwave: obj
     
     # Compute position difference (object to end-effector)
     position_diff = obj_pos - eef_pos
     distance = np.linalg.norm(position_diff)
 
     # Compute rotation difference (object orientation to end-effector orientation)
+    # rot_diff = robosuite.utils.transform_utils.quat_multiply(obj_quat, robosuite.utils.transform_utils.quat_inverse(eef_quat))
+    # rot_diff_axis_angle = robosuite.utils.transform_utils.quat2axisangle(rot_diff)
     eef_rot = R.from_quat(eef_quat)
     obj_rot = R.from_quat(obj_quat)
     rot_diff = obj_rot * eef_rot.inv()
     rot_diff_axis_angle = rot_diff.as_rotvec()
 
     # Set control gains (adjust these based on your system's tuning)
-    threshold = 0.1  # Distance threshold to stop moving towards the object
-    Kp_pos = 1.0  # Position proportional gain
-    Kp_rot = 0.5  # Rotation proportional gain
+    threshold = 0.05  # Distance threshold to stop moving towards the object
+    Kp_pos = 1  # Position proportional gain
+    Kp_rot = 0.005  # Rotation proportional gain
 
     # Compute the control actions
     action = np.zeros(12)
@@ -48,9 +58,10 @@ def scripted_policy(obs):
     # Orientation control (P control)
     action[3:6] = Kp_rot * rot_diff_axis_angle  # Control for orientation
 
-    # Stiffness values (for stability)
-    action[6:9] = [10, 10, 10]  # Position stiffness
-    action[9:12] = [5, 5, 5]  # Orientation stiffness
+    action[6:7] = [0]           # gripper
+    action[7:10] = [0, 0, 0]    # base
+    action[10:11] = 0           # torso
+    action[11:12] = 0           # wheel(?)
     
     return action
 

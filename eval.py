@@ -14,7 +14,7 @@ env_name = np.random.choice(list(ALL_KITCHEN_ENVIRONMENTS))
 #     list(SINGLE_STAGE_TASK_DATASETS)
 # )
 print(list(SINGLE_STAGE_TASK_DATASETS))
-env_name = "OpenDrawer"
+env_name = "TurnOnSinkFaucet"
 
 print(env_name)
 
@@ -23,6 +23,6 @@ env = create_env(env_name=env_name, seed=0)
 
 # run rollouts with random actions and save video
 info = run_random_rollouts(
-    env, num_rollouts=1, num_steps=80, video_path="/tmp/test.mp4"
+    env, num_rollouts=1, num_steps=400, video_path="/tmp/test.mp4"
 )
 print(info)
