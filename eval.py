@@ -14,7 +14,7 @@ env_name = np.random.choice(list(ALL_KITCHEN_ENVIRONMENTS))
 #     list(SINGLE_STAGE_TASK_DATASETS)
 # )
 print(list(SINGLE_STAGE_TASK_DATASETS))
-env_name = "TurnOnSinkFaucet"
+env_name = "TurnOnStove"
 
 print(env_name)
 

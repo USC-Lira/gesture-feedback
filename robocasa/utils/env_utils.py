@@ -13,13 +13,13 @@ from tqdm import tqdm
 from termcolor import colored
 from scipy.spatial.transform import Rotation as R
 
-def scripted_policy(obs):
+def scripted_policy(obs, has_grasped=False, moved_to_grasp_pos=False, lifted=False):
     # Extract relevant information from observations
     eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
     eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
     
-    obj_pos = np.array(obs['distr_counter_0_pos'])         # Object position (e.g., drawer)
-    obj_quat = np.array(obs['distr_counter_0_quat'])       # Object orientation (quaternion)
+    obj_pos = np.array(obs['cookware_pos'])         # Object position (e.g., drawer)
+    obj_quat = np.array(obs['cookware_quat'])       # Object orientation (quaternion)
 
     # Drawer: drawer_obj
     # SinkFaucet: distr_counter_0
@@ -42,28 +42,66 @@ def scripted_policy(obs):
     rot_diff_axis_angle = rot_diff.as_rotvec()
 
     # Set control gains (adjust these based on your system's tuning)
-    threshold = 0.05  # Distance threshold to stop moving towards the object
+    threshold = 0.02  # Distance threshold to stop moving towards the object
     Kp_pos = 1  # Position proportional gain
-    Kp_rot = 0.005  # Rotation proportional gain
+    Kp_rot = 0.0001  # Rotation proportional gain
 
     # Compute the control actions
     action = np.zeros(12)
 
-    # Position control (P control, no velocity)
-    if distance > threshold:
-        action[:3] = Kp_pos * position_diff  # Proportional control for position
-    else:
-        return action # Stop moving if close enough
+    lift_distance = 1
+    original_z = 0
 
-    # Orientation control (P control)
+    # Phase 1: Move toward the object center
+    if not has_grasped:
+        if not moved_to_grasp_pos:
+            # Move towards the object center first
+            if distance > threshold:
+                action[:3] = Kp_pos * position_diff  # Proportional control for position
+            else:
+                # When within the threshold, move 10 cm sideways (x-axis) to prepare for grasp
+                moved_to_grasp_pos = True
+                original_z = action[2]
+        else:
+            # Move 10 cm sideways along the x-axis (or y-axis if desired)
+            sideways_distance = 0.15  # 10 cm movement sideways along the x-axis
+            sideways_pos = np.array([sideways_distance, 0, 0])  # Moving 10 cm in x-direction
+            move_diff = sideways_pos  # The sideways movement is predefined, relative to the current position
+
+            action[:3] = Kp_pos * move_diff  # Apply the sideways action
+
+            # Once the sideways movement is done, close the gripper to grasp the object
+            if np.linalg.norm(move_diff) < threshold:
+                action[6:7] = [1]  # Close the gripper to grasp
+                has_grasped = True  # Mark that the object has been grasped
+
+    # Phase 2: Lift the object after grasping
+    elif has_grasped and not lifted:
+        # Lift the object by moving upwards (z-axis only)
+        lift_target_z = original_z + lift_distance  # Increase only the z-coordinate for lifting
+
+        lift_diff_z = lift_target_z - eef_pos[2]
+
+        # Apply the lifting action only on the z-axis (3rd component of action)
+        action[2] = 0.0001 * lift_diff_z
+
+        # Keep the gripper closed while lifting
+        action[6:7] = [1]  # Keep gripper closed
+
+        # Check if the robot has lifted the object enough
+        if abs(lift_diff_z) < threshold:
+            lifted = True  # Mark that the object has been lifted
+
+
+    # Orientation control (align with object)
     action[3:6] = Kp_rot * rot_diff_axis_angle  # Control for orientation
 
-    action[6:7] = [0]           # gripper
-    action[7:10] = [0, 0, 0]    # base
-    action[10:11] = 0           # torso
-    action[11:12] = 0           # wheel(?)
-    
-    return action
+    # Other controls (base, torso, wheel)
+    action[7:10] = [0, 0, 0]  # base
+    action[10:11] = 0         # torso
+    action[11:12] = 0         # wheel (optional)
+
+    return action, has_grasped, moved_to_grasp_pos, lifted
 
 
 
@@ -125,18 +163,27 @@ def run_random_rollouts(env, num_rollouts, num_steps, video_path=None):
 
     info = {}
     num_success_rollouts = 0
+    has_grasped = False
+    move_to_grasp_pose = False
+    lifted = False
     for rollout_i in tqdm(range(num_rollouts)):
         obs = env.reset()
         for step_i in range(num_steps):
             # sample and execute random action
             # action = np.random.uniform(low=env.action_spec[0], high=env.action_spec[1])
-            action = scripted_policy(obs)
+            action, has_grasped, move_to_grasp_pose, lifted = scripted_policy(obs, has_grasped, move_to_grasp_pose, lifted)
+            if np.allclose(action[:3], [0, 0, 0], atol=1e-4): 
+                print("REACHED")
+            else:
+                print(action)
+                print('######################################')
+                print(obs)
             # print('1111111111111111111')
-            print(action)
+            # print(action)
             obs, _, _, _ = env.step(action)
-            print('######################################')
+            # print('######################################')
             # print(type(obs))
-            print(obs)
+            # print(obs)
 
             if video_writer is not None:
                 video_img = env.sim.render(
