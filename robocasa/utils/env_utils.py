@@ -11,100 +11,8 @@ import imageio
 import numpy as np
 from tqdm import tqdm
 from termcolor import colored
-from scipy.spatial.transform import Rotation as R
-
-def scripted_policy(obs, has_grasped=False, moved_to_grasp_pos=False, lifted=False):
-    # Extract relevant information from observations
-    eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
-    eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
-    
-    obj_pos = np.array(obs['cookware_pos'])         # Object position (e.g., drawer)
-    obj_quat = np.array(obs['cookware_quat'])       # Object orientation (quaternion)
-
-    # Drawer: drawer_obj
-    # SinkFaucet: distr_counter_0
-    # Coffee: obj
-    # TurnOnStove: cookware
-    # Door: door_obj
-    # CoffeeServeMug: obj
-    # Microwave: obj
-    
-    # Compute position difference (object to end-effector)
-    position_diff = obj_pos - eef_pos
-    distance = np.linalg.norm(position_diff)
-
-    # Compute rotation difference (object orientation to end-effector orientation)
-    # rot_diff = robosuite.utils.transform_utils.quat_multiply(obj_quat, robosuite.utils.transform_utils.quat_inverse(eef_quat))
-    # rot_diff_axis_angle = robosuite.utils.transform_utils.quat2axisangle(rot_diff)
-    eef_rot = R.from_quat(eef_quat)
-    obj_rot = R.from_quat(obj_quat)
-    rot_diff = obj_rot * eef_rot.inv()
-    rot_diff_axis_angle = rot_diff.as_rotvec()
-
-    # Set control gains (adjust these based on your system's tuning)
-    threshold = 0.02  # Distance threshold to stop moving towards the object
-    Kp_pos = 1  # Position proportional gain
-    Kp_rot = 0.0001  # Rotation proportional gain
-
-    # Compute the control actions
-    action = np.zeros(12)
-
-    lift_distance = 1
-    original_z = 0
-
-    # Phase 1: Move toward the object center
-    if not has_grasped:
-        if not moved_to_grasp_pos:
-            # Move towards the object center first
-            if distance > threshold:
-                action[:3] = Kp_pos * position_diff  # Proportional control for position
-            else:
-                # When within the threshold, move 10 cm sideways (x-axis) to prepare for grasp
-                moved_to_grasp_pos = True
-                original_z = action[2]
-        else:
-            # Move 10 cm sideways along the x-axis (or y-axis if desired)
-            sideways_distance = 0.15  # 10 cm movement sideways along the x-axis
-            sideways_pos = np.array([sideways_distance, 0, 0])  # Moving 10 cm in x-direction
-            move_diff = sideways_pos  # The sideways movement is predefined, relative to the current position
-
-            action[:3] = Kp_pos * move_diff  # Apply the sideways action
-
-            # Once the sideways movement is done, close the gripper to grasp the object
-            if np.linalg.norm(move_diff) < threshold:
-                action[6:7] = [1]  # Close the gripper to grasp
-                has_grasped = True  # Mark that the object has been grasped
-
-    # Phase 2: Lift the object after grasping
-    elif has_grasped and not lifted:
-        # Lift the object by moving upwards (z-axis only)
-        lift_target_z = original_z + lift_distance  # Increase only the z-coordinate for lifting
-
-        lift_diff_z = lift_target_z - eef_pos[2]
-
-        # Apply the lifting action only on the z-axis (3rd component of action)
-        action[2] = 0.0001 * lift_diff_z
-
-        # Keep the gripper closed while lifting
-        action[6:7] = [1]  # Keep gripper closed
-
-        # Check if the robot has lifted the object enough
-        if abs(lift_diff_z) < threshold:
-            lifted = True  # Mark that the object has been lifted
-
-
-    # Orientation control (align with object)
-    action[3:6] = Kp_rot * rot_diff_axis_angle  # Control for orientation
-
-    # Other controls (base, torso, wheel)
-    action[7:10] = [0, 0, 0]  # base
-    action[10:11] = 0         # torso
-    action[11:12] = 0         # wheel (optional)
-
-    return action, has_grasped, moved_to_grasp_pos, lifted
-
-
-
+from robocasa.utils.primatives import pick, place, reach, pour, twist, open, close, defrost
+from collections import deque
 
 def create_env(
     env_name,
@@ -122,7 +30,7 @@ def create_env(
     # robocasa-related configs
     obj_instance_split=None,
     generative_textures=None,
-    randomize_cameras=False,
+    randomize_cameras=True,
     layout_and_style_ids=None,
     layout_ids=None,
     style_ids=None,
@@ -166,28 +74,89 @@ def run_random_rollouts(env, num_rollouts, num_steps, video_path=None):
     has_grasped = False
     move_to_grasp_pose = False
     lifted = False
+    org_x = 0
+    org_y = 0
+    org_z = 0
+    moved_down = False
+    placed = False
+    poured = False
+    moved_forward = False
+    moved_back = False
+    pushed_forward = False
+    released_grasp = False
+    door_opened = False
+    door_closed = False
+    obj_placed = False
+    pushed_sideways = False
+    repositioned = False
+    moved_back_2 = False
+
+    obj_positions = {}
+    obj_quats = {}
+
+    released = False
+
+
     for rollout_i in tqdm(range(num_rollouts)):
         obs = env.reset()
         for step_i in range(num_steps):
+            for obj_name in env.sim.model.body_names:
+                # Get the position of each object (body) by its name
+                obj_pos = env.sim.data.body_xpos[env.sim.model.body_name2id(obj_name)]
+                # Get the quaternion (orientation) of the object
+                obj_quat = env.sim.data.body_xquat[env.sim.model.body_name2id(obj_name)]
+                obj_positions[obj_name] = obj_pos
+                obj_quats[obj_name] = obj_quat
+                # print(obj_name)
+                # print(f"Position of {obj_name}: {obj_pos}")
+
             # sample and execute random action
-            # action = np.random.uniform(low=env.action_spec[0], high=env.action_spec[1])
-            action, has_grasped, move_to_grasp_pose, lifted = scripted_policy(obs, has_grasped, move_to_grasp_pose, lifted)
+            # Default:
+            # action = np.random.uniform(low=env.action_spec[0], high=env.action_spec[1]) 
+
+            # Reach:
+            # action = reach(obs)
+
+            # Pick:
+            # action, has_grasped, move_to_grasp_pose, moved_down, lifted, org_x, org_z = pick(obs, has_grasped, move_to_grasp_pose, moved_down, lifted, org_x, org_z)
+            
+            # Place: 
+            # action, has_grasped, move_to_grasp_pose, moved_down, lifted, placed, org_x, org_z = place(obs, has_grasped, move_to_grasp_pose, moved_down, lifted, placed, org_x, org_z)
+
+            # Pour:
+            # action, has_grasped, move_to_grasp_pose, moved_down, lifted, poured, org_x, org_z = pour(obs, has_grasped, move_to_grasp_pose, moved_down, lifted, poured, org_x, org_z)
+
+            # Twist:
+            # action, has_grasped, move_to_grasp_pose, moved_down, lifted, poured, org_x, org_z = twist(obs, has_grasped, move_to_grasp_pose, moved_down, lifted, poured, org_x, org_z)  
+
+            # Open:
+            # action, has_grasped, move_to_grasp_pose, moved_forward, moved_back, org_y  = open(obs, has_grasped, move_to_grasp_pose, moved_forward, moved_back, org_y)       
+
+            # Close:
+            # action, has_grasped, move_to_grasp_pose, moved_forward, pushed_forward, released_grasp, org_y  = close(obs, has_grasped, move_to_grasp_pose, moved_forward, pushed_forward, released_grasp, org_y)         
+
+            # Defrost:
+            action, has_grasped, move_to_grasp_pose, moved_forward, moved_back, moved_down, placed, lifted, door_opened, door_closed, obj_placed, released, pushed_sideways, repositioned, moved_back_2, org_x, org_y, org_z = defrost(obs, obj_positions, obj_quats, has_grasped, 
+                move_to_grasp_pose, moved_forward, moved_back, moved_down, placed, lifted, door_opened, door_closed, obj_placed, released, pushed_sideways, repositioned, moved_back_2, org_x, org_y, org_z)
+            
             if np.allclose(action[:3], [0, 0, 0], atol=1e-4): 
                 print("REACHED")
-            else:
-                print(action)
-                print('######################################')
-                print(obs)
-            # print('1111111111111111111')
-            # print(action)
+            # else:
+                # print('######################################')
+                # print(obs)
             obs, _, _, _ = env.step(action)
-            # print('######################################')
-            # print(type(obs))
-            # print(obs)
 
+
+            """
+            "robot0_agentview_left",
+            "robot0_agentview_right",
+            "robot0_eye_in_hand",
+            """
             if video_writer is not None:
                 video_img = env.sim.render(
-                    height=512, width=512, camera_name="robot0_agentview_center"
+                    height=512, width=512, camera_name= "robot0_agentview_left"
+                    # height=512, width=512, camera_name= "robot0_agentview_right"
+                    # height=512, width=512, camera_name= "robot0_eye_in_hand"
                 )[::-1]
                 video_writer.append_data(video_img)
 

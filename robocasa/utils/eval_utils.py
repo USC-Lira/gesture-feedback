@@ -105,5 +105,5 @@ if __name__ == "__main__":
     )
     env = create_eval_env(env_name=env_name)
     info = run_random_rollouts(
-        env, num_rollouts=3, num_steps=100, video_path="/tmp/test.mp4"
+        env, num_rollouts=3, num_steps=500, video_path="/tmp/test.mp4"
     )
