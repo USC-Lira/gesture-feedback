@@ -17,15 +17,18 @@ def reach(obs):
     eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
     eef_quat = np.array(obs['robot0_eef_quat'])      # End-effector orientation (quaternion)
     
-    obj_pos = np.array(obs['door_obj_pos'])         # Object position
-    obj_quat = np.array(obs['door_obj_quat'])       # Object orientation (quaternion)
+    # obj_pos = np.array(obs['door_obj_pos'])         # Object position
+    # obj_quat = np.array(obs['door_obj_quat'])       # Object orientation (quaternion)
+
+    obj_pos = np.array(obs['obj_pos'])
+    obj_quat = np.array(obs['obj_quat'])
 
     # obj_pos[1] += 0.03
     # obj_pos[2] += 0.12
 
-    obj_pos[0] -= 0.3
-    obj_pos[1] += 0.04
-    obj_pos[2] -= 0.03
+    # obj_pos[0] -= 0.3
+    # obj_pos[1] += 0.04
+    # obj_pos[2] -= 0.03
 
     # Compute position difference (object to end-effector)
     position_diff = obj_pos - eef_pos
@@ -148,7 +151,7 @@ def pick(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, lif
 
     return action, has_grasped, moved_to_grasp_pos, moved_down, lifted, org_x, org_z
 
-def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, lifted=False, placed=False, moved_back=False, org_x=0, org_y=0, org_z=0):
+def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, lifted=False, placed=False, moved_back=False, org_x=0, org_y=0, org_z=0, flag = -1):
     # Extract relevant information from observations
     eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
     eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
@@ -158,9 +161,16 @@ def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, li
     obj_pos = np.array(obs['obj_pos'])         # Object position 
     obj_quat = np.array(obs['obj_quat'])       # Object orientation (quaternion)
 
-    # obj_pos[0] += 0.02
-    obj_pos[1] -= 0.16
-    obj_pos[2] += 0.08
+    if flag == 0:
+
+        # Obj: potato 
+        obj_pos[0] += 0.02
+        obj_pos[1] -= 0.16
+        obj_pos[2] += 0.08
+
+    elif flag == 1:
+
+        obj_pos[2] += 0.05
 
     # Compute position difference (object to end-effector)
     position_diff = obj_pos - eef_pos
@@ -180,9 +190,19 @@ def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, li
     # Initialize action array
     action = np.zeros(12)
 
-    lift_distance = 0.65  # 0.2 meter lift distance
-    placement_distance = 0.46  # 0.1 meter horizontal placement distance (for example)
-    sideways_distance = 0.15  # 13 cm movement sideways along the x-axis
+
+    if flag == 0:
+        lift_distance = 0.65
+        placement_distance = 0.46
+        sideways_distance = 0.15
+    elif flag == 1:
+        lift_distance =0.2
+        placement_distance = -0.65
+        sideways_distance = 0
+    else:
+        lift_distance =0
+        placement_distance = 0
+        sideways_distance = 0
 
     rotation = False
 
@@ -192,7 +212,7 @@ def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, li
             # Move towards the object center first
             if distance > threshold:
                 action[:3] = 3 * position_diff  # Proportional control for position
-                action[6:7] = -2  # Maintain gripper parallel to the floor or any desired orientation
+                action[6:7] = -1  # Maintain gripper parallel to the floor or any desired orientation
 
             else:
                 # When within the threshold, move sideways to prepare for grasp
@@ -205,12 +225,24 @@ def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, li
 
             action[:3] = 3 * sideways_pos  # Apply the sideways action   
             move_diff = (eef_pos[1] - org_x)  # The sideways movement relative to original position
-            action[3:6] = 0.4 * np.array([0, 0, 0.5])
-            rotation = True
+
+            if flag == 0:
+                action[3:6] = 0.4 * np.array([0, 0, 0.5])
+                rotation = True
+            elif flag == 1:
+                action[3:6] = 0.7 * np.array([0, 0, 0.5])
+                rotation = True
 
             if abs(move_diff - sideways_distance) < threshold:
                 # Phase 3: Move down before closing the gripper
-                move_down_distance = -0.1  # 9 cm movement downward (z-axis)
+
+                if flag == 0:
+                    move_down_distance = -0.01
+                elif flag == 1:
+                # move_down_distance = -0.1  # 9 cm movement downward (z-axis)
+                    move_down_distance = -0.08
+                else:
+                    move_down_distance = 0
                 move_down_pos = np.array([0.02, 0, move_down_distance])  # Moving down
 
                 action[:3] = 5 * move_down_pos  # Apply the downward action
@@ -224,7 +256,12 @@ def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, li
                 rotation = True
 
                 # Apply the rotation to the action
-                action[3:6] = 0.4 * np.array([0, 0, 0.5])  # Apply small rotation control for the 90-degree turn
+                if flag == 0:
+                    action[3:6] = 0.4 * np.array([0, 0, 0.5])
+                    rotation = True
+                elif flag == 1:
+                    action[3:6] = 0.7 * np.array([0, 0, 0.5])
+                    rotation = True
 
                 if abs(move_down_diff - move_down_distance) < threshold:
                     
@@ -260,7 +297,12 @@ def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, li
         # Phase 5: Move backwards before placing the object
         if not moved_back:
             # Define the distance to move back (negative x direction)
-            backward_distance = -0.2  # e.g., 10 cm backward
+
+            if flag == 0:
+                backward_distance = -0.2
+            else:
+            # backward_distance = -0.2  # e.g., 10 cm backward
+                backward_distance = 0
             move_back_pos = np.array([backward_distance, 0, 0])  # Move backward only along x-axis
 
             # Apply the backward action
@@ -285,20 +327,44 @@ def place(obs, has_grasped=False, moved_to_grasp_pos=False, moved_down=False, li
 
             # Check if the robot has moved to the placement position
             if abs(place_diff - placement_distance) < threshold:
-                # Move down to place the object
-                place_down_distance = 0.35  # 10 cm downward for placement
-                place_down_pos = np.array([place_down_distance, 0, 0])
+
+                if flag == 0:
+                    place_down_distance = 0.35
+                    place_down_pos = np.array([place_down_distance, 0, 0])
+                elif flag == 1:
+                    place_down_distance = -0.14
+                    place_down_pos = np.array([0, 0, place_down_distance])
+                else:
+                    place_down_distance = 0
+                    place_down_pos = np.array([0, 0, place_down_distance])
+
+                # place_down_pos = np.array([place_down_distance, 0, 0]
 
                 action[:3] = 50 * place_down_pos  # Apply the downward action
 
-                place_down_diff = (eef_pos[0] - org_y)  # Check downward movement
+                place_down_diff = (eef_pos[2] - org_z)  # Check downward movement
 
                 print("MOVE FORWARD: ", place_down_diff)
 
+                if (abs(place_down_distance) > 0.06):
+                    action[6:7] = -2
+                
+
+                # if abs(place_down_diff - place_down_distance) < 0.01:
                 if abs(place_down_diff - place_down_distance) < threshold:
+                    print("placed")
                     # Open the gripper to release the object
-                    down = -0.05
-                    action[:3] = 10 * np.array([0,0,down])
+
+                    if flag == 0:
+                        down = -0.05
+
+                    else:
+                        down = 0
+                    # down = -0.05
+                    down = 0
+                    if down == 0:
+                        placed = True
+                    action[:3] = 50 * np.array([0,0,down])
                     action[6:7] = [-2]  # Open the gripper to release the object
                     if abs(eef_pos[2] - org_z - down) < threshold:
                         placed = True  # Mark that the object has been placed
@@ -721,9 +787,9 @@ def close(obs, has_grasped=False, moved_to_grasp_pos=False, moved_forward=False,
     # obj_pos[1] += 0.63
     # obj_pos[2] += 0.2
 
-    obj_pos[1] -= 0.18
-    obj_pos[0] -= 0.2
-    obj_pos[2] += 0.05
+    # obj_pos[1] -= 0.18
+    # obj_pos[0] -= 0.2
+    # obj_pos[2] += 0.05
 
     # Compute position difference (object to end-effector)
     position_diff = eef_pos - obj_pos
@@ -877,6 +943,197 @@ def press(obs):
 
     return action
 
+def openoven(obs, has_grasped=False, moved_to_grasp_pos=False, moved_forward=False, moved_back=False, released=False, pushed_sideways=False, 
+         repositioned=False, moved_back_2=False, cumulative_rot = 0, org_x=0, org_y=0, target_pos=np.array([-1,-1,-1]), target_quat=np.array([-1,-1])):
+    # Extract relevant information from observations
+    eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
+    eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
+
+    if target_pos.all() == -1:
+        obj_pos = np.array(obs['door_obj_pos'])           # Object position
+        obj_quat = np.array(obs['door_obj_quat'])         # Object orientation (quaternion)
+    else:
+        obj_pos = target_pos
+        obj_quat = target_quat
+
+    obj_pos[0] -= 0.08
+    obj_pos[1] -= 0.1
+    obj_pos[2] -= 0.0
+
+    # Adjust object position if needed to align better with the handle
+
+    # Compute position difference (object to end-effector)
+    position_diff = obj_pos - eef_pos
+    distance = np.linalg.norm(position_diff)
+
+    # Compute rotation difference (object orientation to end-effector orientation)
+    rot_diff = robosuite.utils.transform_utils.quat_multiply(obj_quat, robosuite.utils.transform_utils.quat_inverse(eef_quat))
+    rot_diff_axis_angle = robosuite.utils.transform_utils.quat2axisangle(rot_diff)
+
+    # Set control gains
+    threshold = 0.02  # Distance threshold to stop moving
+    Kp_pos = 1        # Position proportional gain
+    Kp_rot = 0.00001  # Rotation proportional gain
+
+    # Initialize action array
+    action = np.zeros(12)
+
+    # Compute rotation difference (object orientation to end-effector orientation)
+    rot_diff = robosuite.utils.transform_utils.quat_multiply(obj_quat, robosuite.utils.transform_utils.quat_inverse(eef_quat))
+    rot_diff_axis_angle = robosuite.utils.transform_utils.quat2axisangle(rot_diff)
+
+    rotation = True
+
+
+    # Phase 1: Move toward the object center
+    if not has_grasped:
+        print("grasp")
+        print("moved_back: ", moved_back)
+
+        if not moved_to_grasp_pos:
+            """
+            # Move towards the object center (x, y, z direction separately)
+            print("DIST: ", distance)
+            if distance > threshold:
+                action[:3] = 3 * position_diff  # Proportional control for position
+            else:
+                # When close enough, mark that we reached the grasp position
+                moved_to_grasp_pos = True
+                org_y = eef_pos[0]  # Store original y position to compare later
+            """
+            print("11111111")
+            org_y = eef_pos[0]
+            moved_to_grasp_pos = True
+        
+        if moved_to_grasp_pos and not moved_back:
+            print("222222")
+            back_distance = -0.20 # Move forward 10 cm
+            back_pos = np.array([back_distance, 0, 0.0])
+            action[:3] = 50 * back_pos  # Move forward along x-axis
+            print("EEF: ", eef_pos[0])
+            print("ORG: ", org_y)
+            print("BACK: ", eef_pos[0] - org_y)
+
+            # Check if we have moved forward enough
+            if abs(eef_pos[0] - org_y - back_distance) < threshold:
+                print("MOVED_BACK")
+                moved_back = True
+                org_y = eef_pos[0]
+                org_x = eef_pos[2]
+
+        elif not moved_forward:
+            print("move_forward")
+            # Phase 2: Move forward a bit (y-direction)
+            down_distance = -0.18  # Move forward 8 cm to grasp handle
+            down_pos = np.array([0.03, 0.05, down_distance])
+            action[:3] = 3 * down_pos  # Move forward along x-axis
+            action[6:7] = -0.3
+            action[3:6] = 0.8 * np.array([0, 0, -0.15])
+            rotation = True
+
+            # Check if we have moved forward enough
+            if abs(eef_pos[2] - org_x - down_distance) < threshold:
+                moved_forward = True
+                org_y = eef_pos[0]
+                action[6:7] = 0
+
+        else:
+            # Phase 3: Grasp the handle by closing the gripper
+            action[6:7] = 0  # Close the gripper to grasp the handle
+            has_grasped = True  # Mark that we have grasped the handle
+            cumulative_rot = 0
+
+    elif has_grasped and not moved_back:
+        # Move backward diagonally (along x and y axes)
+        back_distance_y = -0.10  # distance to move diagonally along the y-axis
+
+        move_vector_y = -1 * back_distance_y  # diagonal shift along the y-axis
+
+        action[6:7] = 0
+
+        action[0] = 2 * move_vector_y  # Move diagonally along the y-axis
+        # action[3:6] = 0.7 * np.array([0, 0, -0.5])
+        rotation = True
+
+        print("YABS: ", eef_pos[0] - org_y + back_distance_y)
+
+        # Check if the robot has moved back enough (diagonally)
+        if abs(eef_pos[0] - org_y + back_distance_y) < 0.01:
+            moved_back = True
+            org_y = eef_pos[0]
+
+    elif moved_back and not released:
+        # Phase 4: Release the handle by opening the gripper
+
+        step = 0.1
+
+        print("STEP")
+
+        action[0:3] = 0.07* np.array([-0.02, 0, 0])
+        action[6:7] = 2
+        action[3:6] = 0.7 * np.array([-0.5, 0, 0])
+
+        cumulative_rot += step
+
+        print("CUMULATIVE: ", cumulative_rot)
+        rotation = True
+
+        if cumulative_rot > 1:
+            released = True
+        # Check if the robot has moved back 2 cm
+    if not rotation:
+        # Orientation control (keep gripper parallel to the floor)
+        action[3:6] = Kp_rot * rot_diff_axis_angle  # Control for maintaining parallel orientation
+
+    # Other controls (base, torso, wheel)
+    action[7:10] = [0, 0, 0]  # base
+    action[10:11] = 0         # torso
+    action[11:12] = 0         # wheel (optional)
+
+    return action, has_grasped, moved_to_grasp_pos, moved_forward, moved_back, released, pushed_sideways, repositioned, moved_back_2, cumulative_rot, org_x, org_y
+    # Extract relevant information from observations
+    eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
+    eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
+
+    obj_pos = np.array(obs['button_obj_pos'])         # Object position (assuming a button)
+    obj_quat = np.array(obs['button_obj_quat'])       # Object orientation (quaternion)
+
+    # Adjust object position for pressing (move along z-axis)
+    press_distance = -0.05  # Set a small distance to press downward (negative z-axis)
+    press_axis = np.array([0, 0, 1])  # Pressing along the z-axis
+    obj_pos += press_distance * press_axis  # Move object position downward
+
+    # Compute position difference (target press position to end-effector position)
+    position_diff = obj_pos - eef_pos
+    distance = np.linalg.norm(position_diff)
+
+    # Compute rotation difference (object orientation to end-effector orientation)
+    rot_diff = robosuite.utils.transform_utils.quat_multiply(obj_quat, robosuite.utils.transform_utils.quat_inverse(eef_quat))
+    rot_diff_axis_angle = robosuite.utils.transform_utils.quat2axisangle(rot_diff)
+
+    # Set control gains
+    threshold = 0.01  # Distance threshold to stop moving (closer threshold for pressing)
+    Kp_pos = 1  # Position proportional gain
+    Kp_rot = 0.00001  # Rotation proportional gain
+
+    # Initialize action array
+    action = np.zeros(12)
+
+    # Phase 1: Press the button by moving along the z-axis (downward)
+    if distance > threshold:
+        action[:3] = Kp_pos * position_diff  # Proportional control for position
+
+    # Orientation control (align with object)
+    action[3:6] = Kp_rot * rot_diff_axis_angle  # Control for orientation
+
+    # Other controls (gripper, base, torso, wheel)
+    action[6:7] = 0  # Gripper remains open during press (can modify if needed)
+    action[7:10] = [0, 0, 0]  # base (if applicable)
+    action[10:11] = 0         # torso (if applicable)
+    action[11:12] = 0         # wheel (optional)
+
+    return action
+
 
 def push(obs, org_x=0):
     # Extract relevant information from observations
@@ -941,6 +1198,8 @@ def defrost(obs, obj_positions, obj_quats, has_grasped,
     # Initialize action array
     action = np.zeros(12)
     
+
+    flag = 0
     # Phase 1: Open microwave door
     if not door_opened:
         action, has_grasped, moved_to_grasp_pos, moved_forward, moved_back, released, pushed_sideways, repositioned, moved_back_2, org_x, org_y = open(
@@ -961,7 +1220,7 @@ def defrost(obs, obj_positions, obj_quats, has_grasped,
     elif not obj_placed:
         action, has_grasped, moved_to_grasp_pos, moved_down, lifted, placed, moved_back, org_x, org_y, org_z = place(
             obs, has_grasped=has_grasped, moved_to_grasp_pos=moved_to_grasp_pos, 
-            moved_down=moved_down, lifted=lifted, placed=placed, moved_back=moved_back, org_x=org_x, org_y=org_y, org_z=org_z
+            moved_down=moved_down, lifted=lifted, placed=placed, moved_back=moved_back, org_x=org_x, org_y=org_y, org_z=org_z, flag =flag
         )
         if placed:
             print("Object placed in microwave.")
@@ -985,6 +1244,53 @@ def defrost(obs, obj_positions, obj_quats, has_grasped,
 
     return action, has_grasped, moved_to_grasp_pos, moved_forward, moved_back, moved_down, placed, lifted, door_opened, door_closed, obj_placed, released, pushed_sideways, repositioned, moved_back_2, org_x, org_y, org_z
 
+def placeinoven(obs, obj_positions, obj_quats, has_grasped, 
+            moved_to_grasp_pos=False, moved_forward=False, moved_back=False, moved_down=False, 
+            placed=False, lifted=False, door_opened=False, door_closed=False, 
+            obj_placed=False, released=False, pushed_sideways=False, repositioned=False, moved_back_2=False, cumulative_rot = 0, org_x=0, org_y=0, org_z=0):
+
+    # Extract end-effector position and quaternion
+    eef_pos = np.array(obs['robot0_eef_pos'])         # End-effector position
+    eef_quat = np.array(obs['robot0_eef_quat'])       # End-effector orientation (quaternion)
+
+    # Define object positions and quaternions for microwave and frozen object
+    obj_pos = np.array(obs["obj_pos"])
+    obj_quat = np.array(obs["obj_quat"])
+
+    flag = 1
+
+    action = np.zeros(12)
+
+    oven_pos = obj_positions["stovetop_main_group_knob_rear_right"]
+    oven_quat = obj_quats["stovetop_main_group_knob_rear_right"]
+
+    if not placed:
+        action, has_grasped, moved_to_grasp_pos, moved_down, lifted, placed, moved_back, org_x, org_y, org_z = place(obs=obs, has_grasped=has_grasped, moved_to_grasp_pos=moved_to_grasp_pos, moved_down=moved_down, lifted=lifted, placed=placed, moved_back=moved_back, org_x=org_x, org_y=org_y, org_z=org_z, flag=flag)
+        if placed:
+            has_grasped = False
+            moved_to_grasp_pos = False
+            moved_down = False
+            lifted = False
+            moved_back = False
+            placed = True
+
+
+    # Phase 1: Open microwave door
+    if placed and not released:
+        print("oven door")
+        action, has_grasped, moved_to_grasp_pos, moved_forward, moved_back, released, pushed_sideways, repositioned, moved_back_2, cumulative_rot, org_x, org_y = openoven(
+            obs, has_grasped=has_grasped, moved_to_grasp_pos=moved_to_grasp_pos, 
+            moved_forward=moved_forward, moved_back=moved_back, released=released, pushed_sideways=pushed_sideways, repositioned=repositioned, moved_back_2=moved_back_2, cumulative_rot=cumulative_rot, org_x=org_x, org_y=org_y, 
+            target_pos=oven_pos, target_quat=oven_quat
+        )
+        if released:
+            released = True
+
+
+    return action, has_grasped, moved_to_grasp_pos, moved_forward, moved_back, moved_down, placed, lifted, door_opened, door_closed, obj_placed, released, pushed_sideways, repositioned, moved_back_2, cumulative_rot, org_x, org_y, org_z
+
+
+# oven_right_group_main
 
 
 
